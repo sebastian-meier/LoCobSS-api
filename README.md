@@ -1,1 +1,5 @@
 # LoCobSS-authentication
+
+```
+firebase deploy
+```
