@@ -1,5 +1,5 @@
 {
-  "name": "locobss-authentication",
+  "name": "locobss-api",
   "version": "1.0.0",
   "description": "",
   "main": "functions/lib/index.js",
@@ -8,12 +8,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sebastian-meier/LoCobSS-authentication.git"
+    "url": "git+https://github.com/sebastian-meier/LoCobSS-api.git"
   },
   "author": "sebastian-meier",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/sebastian-meier/LoCobSS-authentication/issues"
+    "url": "https://github.com/sebastian-meier/LoCobSS-api/issues"
   },
-  "homepage": "https://github.com/sebastian-meier/LoCobSS-authentication#readme"
+  "homepage": "https://github.com/sebastian-meier/LoCobSS-api#readme"
 }

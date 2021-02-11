@@ -1,4 +1,4 @@
-# LoCobSS-authentication
+# LoCobSS-api
 
 ```
 firebase deploy
