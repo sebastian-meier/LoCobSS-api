@@ -1,3 +1,6 @@
+functions/.config.json
+functions/.runtimeconfig.json
+
 # Logs
 logs
 *.log

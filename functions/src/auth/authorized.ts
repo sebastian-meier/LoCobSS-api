@@ -1,13 +1,13 @@
 import {Request, Response} from "express";
 import * as functions from "firebase-functions";
 
-let admin_email = functions.config().bmbf_research_agenda.admin_email;
+const adminEmail = functions.config().bmbf_research_agenda.admin_email;
 
 export function hasRole(roles: Array<"admin" | "manager" | "user">) {
   return (req: Request, res: Response, next: Function) => {
     const {role, email} = res.locals;
 
-    if (email === admin_email) {
+    if (email === adminEmail) {
       return next();
     }
 
@@ -31,7 +31,7 @@ export function isAuthorized(opts: {
     const {role, email, uid} = res.locals;
     const {id} = req.params;
 
-    if (email === admin_email) {
+    if (email === adminEmail) {
       return next();
     }
 
