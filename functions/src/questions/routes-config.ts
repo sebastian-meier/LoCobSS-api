@@ -1,5 +1,5 @@
 import {Application} from "express";
-import {all, publicAll} from "./controller";
+import {all, publicAll, publicById, publicRelated} from "./controller";
 import {isAuthenticated} from "../auth/authenticated";
 import {isAuthorized} from "../auth/authorized";
 
@@ -17,4 +17,13 @@ export function routesConfig(app: Application) {
   app.get("/public/questions/:page",
       publicAll
   );
+
+  app.get("/public/question/:id",
+      publicById
+  );
+
+  app.get("/public/related/questions/:id",
+    publicRelated
+  );
+
 }

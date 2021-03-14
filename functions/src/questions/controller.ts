@@ -2,6 +2,7 @@ import {Request, Response} from "express";
 import * as functions from "firebase-functions";
 import * as mysql from "mysql";
 import * as moment from "moment";
+import fetch from "node-fetch";
 
 const pool = mysql.createPool({
   host: functions.config().bmbf_research_agenda.mysql.host,
@@ -105,7 +106,7 @@ export async function publicAll(req: Request, res: Response) {
         }
       }
 
-      pool.getConnection(function(err, con) {
+      pool.getConnection((err, con) => {
         if (err) {
           throw err;
         }
@@ -158,19 +159,18 @@ export async function publicAll(req: Request, res: Response) {
           const createdMax = (result.length > 0) ? result[0].max_created : null;
 
           con.query(
-              `SELECT 
-                questions.id, 
-                question, 
-                description, 
-                participant_synonym, 
-                created, 
-                has_reply,
-                JSON_ARRAY(
-                  JSON_OBJECT(
-                    'id', taxonomies.id,
-                    'name', taxonomies.name
-                  )
-                ) AS question_taxonomies
+            `SELECT 
+              questions.id, 
+              question_de, 
+              participant_synonym, 
+              created, 
+              has_reply,
+              JSON_ARRAY(
+                JSON_OBJECT(
+                  'id', taxonomies.id,
+                  'name', taxonomies.name
+                )
+              ) AS question_taxonomies
               ${fromStr}
               LIMIT
                 ${publicLimit}
@@ -190,25 +190,7 @@ export async function publicAll(req: Request, res: Response) {
                   hasTaxonomy,
                   hasDate,
                   hasAnswer,
-                  results: result.map((r: {
-                    taxonomies: {
-                      id: number,
-                      name: string
-                    }[],
-                    // eslint-disable-next-line camelcase
-                    question_taxonomies?: string
-                  }) => {
-                    if ("question_taxonomies" in r && r.question_taxonomies) {
-                      r["taxonomies"] = JSON.parse(r.question_taxonomies)
-                          .filter((r: {
-                          id: null | number
-                        }) => r.id !== null);
-                      delete r.question_taxonomies;
-                    } else {
-                      r["taxonomies"] = [];
-                    }
-                    return r;
-                  }),
+                  results: result.map(filterTaxonomies),
                 });
               }
           );
@@ -218,6 +200,154 @@ export async function publicAll(req: Request, res: Response) {
     return res.status(200).send(result);
   } catch (err) {
     return handleError(res, err);
+  }
+}
+
+const filterTaxonomies = (r: {
+  taxonomies: {
+    id: number,
+    name: string
+  }[],
+  // eslint-disable-next-line camelcase
+  question_taxonomies?: string
+}): {
+  taxonomies: {
+    id: number,
+    name: string
+  }[],
+  // eslint-disable-next-line camelcase
+  question_taxonomies?: string
+} => {
+  if ("question_taxonomies" in r && r.question_taxonomies) {
+    r["taxonomies"] = JSON.parse(r.question_taxonomies)
+        .filter((r: {
+        id: null | number
+      }) => r.id !== null);
+    delete r.question_taxonomies;
+  } else {
+    r["taxonomies"] = [];
+  }
+  return r;
+};
+
+export async function publicById(req: Request, res: Response) {
+  try {
+    if ("id" in req.params && !isNaN(parseInt(req.params.id))) {
+      const result: {}[] = await new Promise((resolve, reject) => {
+        pool.getConnection((err, con) => {
+          if (err) {
+            throw err;
+          }
+          con.query(
+            `SELECT 
+              questions.id, 
+              question_de, 
+              description_de, 
+              participant_synonym, 
+              created, 
+              has_reply,
+              JSON_ARRAY(
+                JSON_OBJECT(
+                  'id', taxonomies.id,
+                  'name', taxonomies.name
+                )
+              ) AS question_taxonomies,
+              JSON_ARRAY(
+                JSON_OBJECT(
+                  'id', replies.id,
+                  'name', replies.name
+                )
+              ) AS question_replies
+            FROM
+              questions
+            LEFT OUTER JOIN
+              ref_questions_taxonomies
+              ON ref_questions_taxonomies.question_id = questions.id
+            LEFT OUTER JOIN
+              taxonomies
+              ON ref_questions_taxonomies.taxonomy_id = taxonomies.id
+            LEFT OUTER JOIN
+              ref_questions_replies
+              ON ref_questions_replies.question_id = questions.id
+            LEFT OUTER JOIN
+              replies
+              ON ref_questions_replies.reply_id = replies.id
+            WHERE
+              id = ? AND
+              state = 'published'`,
+              [parseInt(req.params.id)],
+              (err, result) => {
+                if (err) {
+                  throw reject(err);
+                }
+                resolve(result);
+              });
+        });
+      });
+      if (result.length === 0) {
+        return res.status(404).send({message: `Id not found`}); 
+      } else {
+        return res.status(200).send(result);
+      }
+    } else {
+      return res.status(400).send({message: `No valid id received`}); 
+    }
+  } catch (err) {
+    return handleError(res, err);
+  }
+}
+
+export async function publicRelated(req: Request, res: Response) {
+  if ('id' in req.params && !isNaN(parseInt(req.params.id))) {
+    console.log(req.params.id);
+    const response = await fetch(functions.config().bmbf_research_agenda.services.similarity + '/similar/' + req.params.id);
+    const json = await response.json();
+
+    if (json.ids.length > 0) {
+      const result: {results:{}[]} = await new Promise((resolve, reject) => {
+        pool.getConnection((err, con) => {
+          if (err) {
+            throw err;
+          }
+
+          con.query(
+            `SELECT 
+              questions.id, 
+              question_de, 
+              participant_synonym, 
+              created, 
+              has_reply,
+              JSON_ARRAY(
+                JSON_OBJECT(
+                  'id', taxonomies.id,
+                  'name', taxonomies.name
+                )
+              ) AS question_taxonomies
+            FROM
+              questions
+            LEFT OUTER JOIN
+              ref_questions_taxonomies
+              ON ref_questions_taxonomies.question_id = questions.id
+            LEFT OUTER JOIN
+              taxonomies
+              ON ref_questions_taxonomies.taxonomy_id = taxonomies.id
+            WHERE questions.id IN (${json.ids.join(',')})`,
+            (err, result) => {
+              if (err) {
+                throw reject(err);
+              }
+              resolve({
+                results: result.map(filterTaxonomies),
+              });
+            });
+          });
+        });
+        return res.status(200).send(result);
+    } else {
+      return res.status(200).send({results:[]});
+    }
+  } else {
+    return res.status(400).send({message: `No valid id received`}); 
   }
 }
 
