@@ -4,6 +4,7 @@ import * as express from "express";
 import * as cors from "cors";
 import {json as bpJson} from "body-parser";
 import {routesConfig as userConfig} from "./users/routes-config";
+import {routesConfig as taxonomyConfig} from "./taxonomies/routes-config";
 import {routesConfig as questionConfig} from "./questions/routes-config";
 
 admin.initializeApp();
@@ -14,6 +15,7 @@ app.use(cors({origin: true}));
 
 userConfig(app);
 questionConfig(app);
+taxonomyConfig(app);
 
 export const api = functions
     .region("europe-west3")
