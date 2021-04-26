@@ -3,13 +3,18 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as moment from "moment";
 import fetch from "node-fetch";
+import {v1 as uuidv1} from "uuid";
 import {v2} from "@google-cloud/translate";
 import {
   createPool,
   processQuery,
   handleError,
   emailValidation,
-  hasNumbersAndLetters} from "../utils";
+  hasNumbersAndLetters,
+  parseIdString} from "../utils";
+
+// Minimum length for question and description
+const minLength = 10;
 
 const pool = createPool();
 const translate = new v2.Translate({
@@ -31,6 +36,18 @@ export async function all(req: Request, res: Response) {
 }
 
 export async function userAll(req: Request, res: Response) {
+  // await admin
+  //     .auth()
+  //     .setCustomUserClaims("F5unopwbR9bfkHBc8TpSJPKqjqq1", {role: "admin"});
+
+  // await admin
+  //     .auth()
+  //     .setCustomUserClaims("prsxPrZ5N3X32V56vQf98Esw4iB3", {role: "user"});
+
+  // await admin
+  //     .auth()
+  //     .setCustomUserClaims("V08KZAYdcLQCavA5xvg58jiVcDc2", {role: "user"});
+
   try {
     if (!("uid" in res.locals)) {
       return res.status(404).send({
@@ -52,7 +69,11 @@ export async function userAll(req: Request, res: Response) {
               'name', taxonomies.name
             )
           ) AS questionTaxonomies,
-          ref_participants_questions.type AS relation
+          ref_participants_questions.type AS relation,
+          CASE
+            WHEN ref_participants_questions.type = 'like' THEN 'like'
+            ELSE NULL
+          END AS liked
           FROM
             questions
           LEFT OUTER JOIN
@@ -95,16 +116,16 @@ export async function publicAll(req: Request, res: Response) {
       let search: string[] = [];
       if ("query" in req.query && req.query.query !== undefined) {
         hasSearch = true;
-        const searchStr = "%" + req.query.query.toString() + "%";
+        const searchStr = "%" + req.query.query.toString().toLowerCase() + "%";
         search = new Array(4).fill(searchStr);
       }
 
       // TAXONOMY
       let hasTaxonomy = false;
-      let taxonomies: string[] = [];
+      let taxonomies: number[] = [];
       if ("taxonomies" in req.query && req.query.taxonomies !== undefined) {
         hasTaxonomy = true;
-        taxonomies = req.query.taxonomies.toString().split(",");
+        taxonomies = parseIdString(req.query.taxonomies.toString());
       }
 
       // HAS ANSWER
@@ -151,7 +172,12 @@ export async function publicAll(req: Request, res: Response) {
           throw err;
         }
 
+        const uidA = ("uid" in res.locals) ?
+          [res.locals.uid] :
+          [];
+
         const params = [
+          ...uidA,
           ...answer,
           ...dates.map((d) => d.format("YYYY-MM-DD HH:mm:ss")),
           ...search,
@@ -166,28 +192,34 @@ export async function publicAll(req: Request, res: Response) {
         LEFT OUTER JOIN
           taxonomies
           ON ref_questions_taxonomies.taxonomy_id = taxonomies.id
+          ${("uid" in res.locals) ? `LEFT OUTER JOIN
+          ref_participants_questions
+          ON ref_participants_questions.question_id = questions.id
+          AND ref_participants_questions.type = 'like'
+          AND ref_participants_questions.participant_id = ?` : ""}
         WHERE
           state = 'published'
           ${(hasAnswer) ? " AND has_reply = ? " : ""}
           ${(hasDate) ? " AND (created >= ? AND created <= ?) " : ""}
           ${(hasSearch) ? ` AND (
-            question LIKE ? 
-            OR description LIKE ? 
-            OR question_en LIKE ? 
-            OR description_en LIKE ?
-          )` : "" }
-        GROUP BY
-          questions.id
-        ${(hasTaxonomy) ? ` HAVING ${taxonomies.map(() => {
-  return "JSON_CONTAINS(question_taxonomies, ?, '$[*].id')";
-}).join(" AND ")} ` : "" }`;
+            LOWER(question) LIKE ? 
+            OR LOWER(description) LIKE ? 
+            OR LOWER(question_en) LIKE ? 
+            OR LOWER(description_en) LIKE ?
+          )` : "" }`;
 
         con.query(`SELECT
           COUNT(*) AS overall,
           MIN(t.created) AS min_created,
           MAX(t.created) AS max_created
           FROM (SELECT questions.id, questions.created  
-        ${fromStr}) AS t`,
+        ${fromStr}
+        ${(hasTaxonomy) ?
+          " AND (" + taxonomies.map(() => {
+            return "ref_questions_taxonomies.taxonomy_id = ? ";
+          }).join(" OR ") + ")" :
+          ""}
+          GROUP BY questions.id) AS t`,
         params,
         (err, result) => {
           if (err) {
@@ -197,6 +229,10 @@ export async function publicAll(req: Request, res: Response) {
           const overall = (result.length > 0) ? result[0].overall : 0;
           const createdMin = (result.length > 0) ? result[0].min_created : null;
           const createdMax = (result.length > 0) ? result[0].max_created : null;
+
+          if (publicLimit * page > overall) {
+            page = 0;
+          }
 
           con.query(
               `SELECT 
@@ -211,7 +247,14 @@ export async function publicAll(req: Request, res: Response) {
                   'name', taxonomies.name
                 )
               ) AS questionTaxonomies
+              ${("uid" in res.locals) ?
+        ",ref_participants_questions.type AS liked" :
+        "" }
               ${fromStr}
+              GROUP BY questions.id
+              ${(hasTaxonomy) ? ` HAVING ${taxonomies.map(() => {
+  return "JSON_CONTAINS(questionTaxonomies, JSON_OBJECT('id', ?))";
+}).join(" AND ")} ` : "" }
               LIMIT
                 ${publicLimit}
               OFFSET
@@ -281,6 +324,15 @@ const cleanRelations = (r: {
 export async function publicById(req: Request, res: Response) {
   try {
     if ("id" in req.params && !isNaN(parseInt(req.params.id))) {
+      const uidA = ("uid" in res.locals) ?
+        [res.locals.uid] :
+        [];
+      const params: any[] = [
+        ...uidA,
+        ...[parseInt(req.params.id)],
+        ...uidA,
+      ];
+
       const result = await processQuery(
           pool,
           `SELECT 
@@ -299,9 +351,12 @@ export async function publicById(req: Request, res: Response) {
           JSON_ARRAY(
             JSON_OBJECT(
               'id', replies.id,
-              'name', replies.title
+              'name', replies.name
             )
           ) AS questionReplies
+          ${("uid" in res.locals) ?
+        ",ref_participants_questions.type AS liked" :
+        "" }
         FROM
           questions
         LEFT OUTER JOIN
@@ -316,13 +371,26 @@ export async function publicById(req: Request, res: Response) {
         LEFT OUTER JOIN
           replies
           ON ref_questions_replies.reply_id = replies.id
+        ${("uid" in res.locals) ? `LEFT OUTER JOIN
+          ref_participants_questions
+          ON ref_participants_questions.question_id = questions.id
+          AND ref_participants_questions.type = 'like'
+          AND ref_participants_questions.participant_id = ?` : ""}
         WHERE
           questions.id = ? AND
-          state = 'published'`,
-          [parseInt(req.params.id)],
+          ( questions.state = 'published'
+          ${("uid" in res.locals) ? ` OR questions.id IN (
+            SELECT
+              question_id
+            FROM
+              ref_participants_questions
+            WHERE
+              type = 'ask' AND
+              participant_id = ?
+          )` : ""}
+          )`,
+          params,
       );
-
-      console.log(parseInt(req.params.id));
 
       if (result.length === 0) {
         return res.status(404).send({message: "Id not found"});
@@ -342,6 +410,14 @@ export async function publicById(req: Request, res: Response) {
 export async function byId(req: Request, res: Response) {
   try {
     if ("id" in req.params && !isNaN(parseInt(req.params.id))) {
+      const uidA = ("uid" in res.locals) ?
+        [res.locals.uid] :
+        [];
+      const params: any[] = [
+        ...uidA,
+        ...[parseInt(req.params.id)],
+      ];
+
       const result = await processQuery(
           pool,
           `SELECT 
@@ -355,9 +431,12 @@ export async function byId(req: Request, res: Response) {
           JSON_ARRAY(
             JSON_OBJECT(
               'id', replies.id,
-              'name', replies.title
+              'name', replies.name
             )
           ) AS questionReplies
+          ${("uid" in res.locals) ?
+        ",ref_participants_questions.type AS liked" :
+        "" }
         FROM
           questions
         LEFT OUTER JOIN
@@ -372,9 +451,14 @@ export async function byId(req: Request, res: Response) {
         LEFT OUTER JOIN
           replies
           ON ref_questions_replies.reply_id = replies.id
+        ${("uid" in res.locals) ? `LEFT OUTER JOIN
+          ref_participants_questions
+          ON ref_participants_questions.question_id = questions.id
+          AND ref_participants_questions.type = 'like'
+          AND ref_participants_questions.participant_id = ?` : ""}
         WHERE
           questions.id = ?`,
-          [parseInt(req.params.id)]
+          params
       );
       if (result.length === 0) {
         return res.status(404).send({message: "Id not found"});
@@ -399,10 +483,16 @@ export async function publicRelated(req: Request, res: Response) {
       "/similar_random/" +
       req.params.id
     );
+
+    if (response.status !== 200) {
+      // ID not found
+      return res.status(200).send({results: []});
+    }
+
     const json = await response.json();
 
     if (json.ids.length > 0) {
-      const results = await questionsFromIds(json.ids);
+      const results = await questionsFromIds(json.ids, res);
       return res.status(200).send(results);
     } else {
       return res.status(200).send({results: []});
@@ -412,7 +502,11 @@ export async function publicRelated(req: Request, res: Response) {
   }
 }
 
-function questionsFromIds(ids: string[]): Promise<{}[]> {
+function questionsFromIds(
+    ids: string[],
+    res: Response,
+    onlyPublished: boolean = true
+): Promise<{}[]> {
   return new Promise((resolve, reject) => {
     pool.getConnection((err, con) => {
       if (err) {
@@ -434,6 +528,9 @@ function questionsFromIds(ids: string[]): Promise<{}[]> {
             'name', taxonomies.name
           )
         ) AS questionTaxonomies
+        ${("uid" in res.locals) ?
+        ",ref_participants_questions.type AS liked" :
+        "" }
       FROM
         questions
       LEFT OUTER JOIN
@@ -442,7 +539,14 @@ function questionsFromIds(ids: string[]): Promise<{}[]> {
       LEFT OUTER JOIN
         taxonomies
         ON ref_questions_taxonomies.taxonomy_id = taxonomies.id
-      WHERE questions.id IN (${ids.join(",")})`,
+      ${("uid" in res.locals) ? `LEFT OUTER JOIN
+        ref_participants_questions
+        ON ref_participants_questions.question_id = questions.id
+        AND ref_participants_questions.type = 'like'
+        AND ref_participants_questions.participant_id = ?` : ""}
+      WHERE questions.id IN (${ids.join(",")})
+        ${(onlyPublished) ? "AND questions.state = 'published'" : ""}`,
+          ("uid" in res.locals) ? [res.locals.uid] : [],
           (err, result) => {
             if (err) {
               throw reject(err);
@@ -473,7 +577,7 @@ export async function relatedFromIds(req: Request, res: Response) {
         const json = await response.json();
 
         if (json.ids.length > 0) {
-          const results: {}[] = await questionsFromIds(json.ids);
+          const results: {}[] = await questionsFromIds(json.ids, res, false);
           return res.status(200).send(results);
         } else {
           return res.status(200).send({results: []});
@@ -485,6 +589,37 @@ export async function relatedFromIds(req: Request, res: Response) {
     return handleError(res, err);
   }
 }
+
+const getTranslations = async (req: Request, minLength: number): Promise<{
+  [key in string | "de" | "en"]: {
+    [key in "question" | "description"]?: string
+  }
+}> => {
+  const translation: {
+    [key in string | "de" | "en"]: {
+      [key in "question" | "description"]?: string
+    }
+  } = {"de": {}, "en": {}};
+
+  const langs = Object.keys(translation);
+  for (let l = 0; l < langs.length; l += 1) {
+    const lang = langs[l];
+    const transQuestion =
+      await translate.translate(req.body.question, lang);
+    translation[lang].question = transQuestion[0];
+    if (
+      "description" in req.body &&
+      req.body.description &&
+      req.body.description.length > minLength
+    ) {
+      const transDescription =
+        await translate.translate(req.body.description, lang);
+      translation[lang].description = transDescription[0];
+    }
+  }
+
+  return translation;
+};
 
 // This is the most dangerous endpoint.
 // All other endpoints are either read-only
@@ -512,9 +647,6 @@ export async function create(req: Request, res: Response) {
       let questionId: number | null = null;
       let questionEn: string | null = null;
 
-      // Minimum length for question and description
-      const minLength = 10;
-
       if (
         "question" in req.body &&
         req.body.question &&
@@ -525,28 +657,7 @@ export async function create(req: Request, res: Response) {
           name = "anonym";
         }
 
-        const translations: {
-          [key in string | "de" | "en"]: {
-            [key in "question" | "description"]?: string
-          }
-        } = {"de": {}, "en": {}};
-
-        const langs = Object.keys(translations);
-        for (let l = 0; l < langs.length; l += 1) {
-          const lang = langs[l];
-          const transQuestion =
-            await translate.translate(req.body.question, lang);
-          translations[lang].question = transQuestion[0];
-          if (
-            "description" in req.body &&
-            req.body.description &&
-            req.body.description.length > minLength
-          ) {
-            const transDescription =
-              await translate.translate(req.body.question, lang);
-            translations[lang].description = transDescription[0];
-          }
-        }
+        const translations = await getTranslations(req, minLength);
 
         const questions = await processQuery(pool, `INSERT INTO questions 
           (
@@ -709,7 +820,7 @@ export async function create(req: Request, res: Response) {
                       summaryArray[key].push(r[key]);
                     });
                     summary[key] = {
-                      mean: summaryArray[key].reduce((p, c) => p + c, 0) / 
+                      mean: summaryArray[key].reduce((p, c) => p + c, 0) /
                         summaryArray[key].length,
                       max: Math.max(...summaryArray[key]),
                       min: Math.min(...summaryArray[key]),
@@ -778,7 +889,7 @@ export async function create(req: Request, res: Response) {
           );
           const jResponse = await response.json();
           if ("similar" in jResponse && jResponse.similar.length > 0) {
-            relatedQuestions = await questionsFromIds(jResponse.similar);
+            relatedQuestions = await questionsFromIds(jResponse.similar, res);
           }
 
           await processQuery(
@@ -795,9 +906,18 @@ export async function create(req: Request, res: Response) {
               )`,
               [questionId, ...jResponse.vectors[0]]);
         }
+
+        const token = uuidv1();
+        await processQuery(
+            pool,
+            "INSERT INTO link_token (token) VALUES (?)",
+            [token]
+        );
+
         return res.status(200).send({
           message: "Success",
           question: questionId,
+          token: token,
           text: req.body.question,
           results: relatedQuestions,
         });
@@ -830,4 +950,241 @@ export async function rebuild(req: Request, res: Response) {
   return res.status(200).send({
     message: "success",
   });
+}
+
+export async function like(req: Request, res: Response) {
+  if (
+    "id" in req.params &&
+    req.params.id &&
+    !isNaN(parseInt(req.params.id))
+  ) {
+    try {
+      const exists = await processQuery(
+          pool,
+          `SELECT 
+            COUNT(*) AS count
+          FROM
+            ref_participants_questions
+          WHERE
+            type = 'like' AND
+            question_id = ? AND
+            participant_id = ?`,
+          [req.params.id, res.locals.uid]);
+      if (exists.length > 0 && exists[0].count > 0) {
+        await processQuery(
+            pool,
+            `DELETE FROM
+              ref_participants_questions
+            WHERE
+              type = 'like' AND
+              question_id = ? AND
+              participant_id = ?`,
+            [req.params.id, res.locals.uid]);
+        return res.status(200).send({
+          result: false,
+        });
+      } else {
+        await processQuery(
+            pool,
+            `INSERT INTO
+              ref_participants_questions
+            (type, question_id, participant_id)
+            VALUES
+            ('like', ?, ?)`,
+            [req.params.id, res.locals.uid]);
+        return res.status(200).send({
+          result: true,
+        });
+      }
+    } catch (err) {
+      return handleError(res, err);
+    }
+  } else {
+    return res.status(400).send({
+      message: "Valid Id missing",
+      errorCode: 1,
+    });
+  }
+}
+
+export async function deleteQuestion(req: Request, res: Response) {
+  if (
+    "id" in req.params &&
+    req.params.id &&
+    !isNaN(parseInt(req.params.id))
+  ) {
+    try {
+      await processQuery(
+          pool,
+          `DELETE q, rpq, qv, rqr, rqt, rqu FROM
+            questions q
+          LEFT OUTER JOIN
+            ref_participants_questions rpq
+            ON rpq.question_id = q.id
+          LEFT OUTER JOIN
+            question_vectors qv
+            ON qv.question_id = q.id
+          LEFT OUTER JOIN
+            ref_questions_replies rqr
+            ON rqr.question_id = q.id
+          LEFT OUTER JOIN
+            ref_questions_taxonomies rqt
+            ON rqt.question_id = q.id
+          LEFT OUTER JOIN
+            ref_question_userlinks rqu
+            ON rqu.question_id_1 = q.id
+            OR rqu.question_id_2 = q.id
+          WHERE
+            id = ?`,
+          [req.params.id]);
+    } catch (err) {
+      return handleError(res, err);
+    }
+    return res.status(200).send({
+      message: "Question deleted",
+    });
+  } else {
+    return res.status(400).send({
+      message: "Valid Id missing",
+      errorCode: 1,
+    });
+  }
+}
+
+export async function link(req: Request, res: Response) {
+  if (
+    "token" in req.body &&
+    "source" in req.body &&
+    "target" in req.body &&
+    "strength" in req.body
+  ) {
+    try {
+      // validate token
+      const tokenCount = await processQuery(
+          pool,
+          "SELECT COUNT(*) AS count FROM link_token WHERE token = ?",
+          [req.body.token]);
+      if (tokenCount[0].count === 1) {
+        // validate token capacity
+        const tokenCap = await processQuery(
+            pool,
+            `SELECT 
+              question_id_1, question_id_2 
+            FROM 
+              ref_question_userlinks
+            WHERE token = ?`,
+            [req.body.token]);
+        if (tokenCap.length < 10) {
+          // check if this is an update
+          const ids = [req.body.source, req.body.target].sort();
+          let isUpdate = false;
+          tokenCap.forEach((t) => {
+            if (
+              t.question_id_1 === ids[0] &&
+              t.question_id_2 === ids[1]
+            ) {
+              isUpdate = true;
+            }
+          });
+          if (isUpdate) {
+            await processQuery(
+                pool,
+                `UPDATE 
+                  ref_question_userlinks
+                SET
+                  strength = ? 
+                WHERE
+                  token = ? AND
+                  question_id_1 = ? AND
+                  question_id_2 = ?`,
+                [
+                  req.body.strength,
+                  req.body.token,
+                  ids[0],
+                  ids[1],
+                ]);
+          } else {
+            await processQuery(
+                pool,
+                `INSERT INTO 
+                  ref_question_userlinks
+                  (question_id_1, question_id_2, strength, token)
+                VALUES
+                  (?,?,?,?)`,
+                [
+                  ids[0],
+                  ids[1],
+                  req.body.strength,
+                  req.body.token,
+                ]);
+          }
+          return res.status(200).send({
+            message: "success",
+          });
+        } else {
+          return res.status(400).send({
+            message: "Token capacity exceeded",
+            errorCode: 2,
+          });
+        }
+      } else {
+        return res.status(400).send({
+          message: "Invalid token",
+          errorCode: 2,
+        });
+      }
+    } catch (err) {
+      return handleError(res, err);
+    }
+  } else {
+    return res.status(400).send({
+      message: "Incomplete request",
+      errorCode: 1,
+    });
+  }
+}
+
+export async function update(req: Request, res: Response) {
+  // TODO: Currently only texts are updated,
+  // embeddings, profanity and sentiment are not updated.
+  try {
+    if (
+      "id" in req.params && !isNaN(parseInt(req.params.id.toString()))
+    ) {
+      const id = parseInt(req.params.id.toString());
+
+      const translations = await getTranslations(req, minLength);
+
+      await processQuery(
+          pool,
+          `UPDATE questions SET 
+            state = ?,
+            question = ?,
+            description = ?,
+            question_de = ?,
+            description_de = ?,
+            question_en = ?,
+            description_en = ?
+          WHERE
+            id = ?`,
+          [
+            (req.body.state) ? req.body.state.toString() : "",
+            (req.body.question) ? req.body.question.toString() : "",
+            (req.body.description) ? req.body.description.toString() : "",
+            (translations.de.question) ? translations.de.question : "",
+            (translations.de.description) ? translations.de.description : "",
+            (translations.en.question) ? translations.en.question : "",
+            (translations.en.description) ? translations.en.description : "",
+            id,
+          ]
+      );
+      return res.status(200).send({id});
+    } else {
+      return res.status(400).send({
+        message: "No valid id or attributes received",
+      });
+    }
+  } catch (err) {
+    return handleError(res, err);
+  }
 }

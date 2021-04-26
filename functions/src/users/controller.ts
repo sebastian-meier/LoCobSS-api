@@ -49,7 +49,6 @@ export async function get(req: Request, res: Response) {
   try {
     const {id} = req.params;
     const user = await admin.auth().getUser(id);
-    console.info("user", JSON.stringify(user));
     return res.status(200).send({user: mapUser(user)});
   } catch (err) {
     return handleError(res, err);

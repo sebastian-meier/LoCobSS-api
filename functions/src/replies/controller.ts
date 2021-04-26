@@ -7,7 +7,7 @@ export async function publicAll(req: Request, res: Response) {
   try {
     const result = await processQuery(
         pool,
-        "SELECT id, name, parent FROM taxonomies",
+        "SELECT id, body, name, url FROM replies",
         []);
     return res.status(200).send(result);
   } catch (err) {
@@ -20,7 +20,7 @@ export async function byId(req: Request, res: Response) {
     if ("id" in req.params && !isNaN(parseInt(req.params.id))) {
       const result = await processQuery(
           pool,
-          "SELECT * FROM taxonomies WHERE id = ?",
+          "SELECT * FROM replies WHERE id = ?",
           [req.params.id]);
       if (result.length === 0) {
         return res.status(404).send({message: "Id not found"});
@@ -35,15 +35,16 @@ export async function byId(req: Request, res: Response) {
   }
 }
 
-export async function createTax(req: Request, res: Response) {
+export async function createReply(req: Request, res: Response) {
   try {
     if ("name" in req.query && req.query.name) {
       const result = await processQuery(
           pool,
-          "INSERT INTO taxonomies (name, parent) VALUES (?, ?)",
+          "INSERT INTO replies (name, body, url) VALUES (?, ?)",
           [
             req.query.name.toString(),
-            ((req.query.parent) ? parseInt(req.query.parent.toString()) : null),
+            (req.query.body) ? req.query.body.toString() : "",
+            (req.query.url) ? req.query.url.toString() : "",
           ]
       );
       const results = {insertId: null, ...result};
@@ -56,27 +57,23 @@ export async function createTax(req: Request, res: Response) {
   }
 }
 
-export async function updateTax(req: Request, res: Response) {
+export async function updateReply(req: Request, res: Response) {
   try {
     if (
       "id" in req.params &&
       req.params.id &&
-      !isNaN(parseInt(req.params.id.toString())) &&
-      "name" in req.body && req.body.name
+      !isNaN(parseInt(req.params.id.toString()))
     ) {
       const id = parseInt(req.params.id.toString());
       await processQuery(
           pool,
-          "UPDATE taxonomies SET name = ?, parent = ? WHERE id = ?",
+          "UPDATE replies SET name = ?, body = ?, url = ? WHERE id = ?",
           [
-            req.body.name.toString(),
-          (
-            "parent" in req.query &&
-            req.query.parent &&
-            !isNaN(parseInt(req.query.parent.toString()))) ?
-              parseInt(req.query.parent.toString()) :
-              null,
-          id]
+            (req.body.name) ? req.body.name.toString() : "",
+            (req.body.body) ? req.body.body.toString() : "",
+            (req.body.url) ? req.body.url.toString() : "",
+            id,
+          ]
       );
       return res.status(200).send(id);
     } else {
@@ -87,12 +84,12 @@ export async function updateTax(req: Request, res: Response) {
   }
 }
 
-export async function deleteTax(req: Request, res: Response) {
+export async function deleteReply(req: Request, res: Response) {
   try {
     if ("id" in req.params && !isNaN(parseInt(req.params.id))) {
       await processQuery(
           pool,
-          "DELETE FROM taxonomies WHERE id = ?",
+          "DELETE FROM replies WHERE id = ?",
           [parseInt(req.params.id)]
       );
       return res.status(200).send(req.params.id);
@@ -104,17 +101,17 @@ export async function deleteTax(req: Request, res: Response) {
   }
 }
 
-export async function assignTax(req: Request, res: Response) {
+export async function assignReply(req: Request, res: Response) {
   try {
     if ("questions" in req.query && req.query.questions &&
-    "taxonomies" in req.query && req.query.taxonomies) {
+    "replies" in req.query && req.query.replies) {
       const questions = parseIdString(req.query.questions.toString());
-      const taxonomies = parseIdString(req.query.taxonomies.toString());
+      const replies = parseIdString(req.query.replies.toString());
 
-      if (questions.length >= 1 && taxonomies.length >= 1) {
+      if (questions.length >= 1 && replies.length >= 1) {
         const params: number[] = [];
         questions.forEach((q) => {
-          taxonomies.forEach((t) => {
+          replies.forEach((t) => {
             params.push(q, t);
           });
         });
@@ -122,9 +119,9 @@ export async function assignTax(req: Request, res: Response) {
         await processQuery(
             pool,
             `INSERT IGNORE INTO 
-            ref_questions_taxonomies (question_id, taxonomy_id) 
+            ref_questions_replies (question_id, reply_id) 
           VALUES 
-            ${(new Array(questions.length * taxonomies.length))
+            ${(new Array(questions.length * replies.length))
       .fill(0)
       .map(() => {
         return "(?, ?)";
@@ -134,49 +131,7 @@ export async function assignTax(req: Request, res: Response) {
 
         return res.status(200).send({
           questions,
-          taxonomies,
-        });
-      }
-    }
-    return res.status(400).send({
-      message: "Missing question ids or taxonomy id",
-    });
-  } catch (err) {
-    return handleError(res, err);
-  }
-}
-
-export async function revokeTax(req: Request, res: Response) {
-  try {
-    if ("questions" in req.query && req.query.questions &&
-    "taxonomies" in req.query && req.query.taxonomies) {
-      const questions = parseIdString(req.query.questions.toString());
-      const taxonomies = parseIdString(req.query.taxonomies.toString());
-
-      if (questions.length >= 1 && taxonomies.length >= 1) {
-        const params: number[] = [];
-        questions.forEach((q) => {
-          taxonomies.forEach((t) => {
-            params.push(q, t);
-          });
-        });
-
-        await processQuery(
-            pool,
-            `DELETE FROM 
-            ref_questions_taxonomies
-            WHERE 
-            ${(new Array(questions.length * taxonomies.length))
-      .fill(0)
-      .map(() => {
-        return " (question_id = ? AND taxonomy_id = ?) ";
-      }).join(" OR ")}`,
-            params
-        );
-
-        return res.status(200).send({
-          questions,
-          taxonomies,
+          replies,
         });
       }
     }
@@ -188,3 +143,44 @@ export async function revokeTax(req: Request, res: Response) {
   }
 }
 
+export async function revokeReply(req: Request, res: Response) {
+  try {
+    if ("questions" in req.query && req.query.questions &&
+    "replies" in req.query && req.query.replies) {
+      const questions = parseIdString(req.query.questions.toString());
+      const replies = parseIdString(req.query.replies.toString());
+
+      if (questions.length >= 1 && replies.length >= 1) {
+        const params: number[] = [];
+        questions.forEach((q) => {
+          replies.forEach((t) => {
+            params.push(q, t);
+          });
+        });
+
+        await processQuery(
+            pool,
+            `DELETE FROM 
+            ref_questions_replies
+            WHERE 
+            ${(new Array(questions.length * replies.length))
+      .fill(0)
+      .map(() => {
+        return " (question_id = ? AND reply_id = ?) ";
+      }).join(" OR ")}`,
+            params
+        );
+
+        return res.status(200).send({
+          questions,
+          replies,
+        });
+      }
+    }
+    return res.status(400).send({
+      message: "Missing question ids or reply id",
+    });
+  } catch (err) {
+    return handleError(res, err);
+  }
+}

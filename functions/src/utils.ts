@@ -16,11 +16,19 @@ export const createPool = (): mysql.Pool => {
   });
 };
 
+export const parseIdString = (str: string): number[] => {
+  return str.split(",").map((id) => {
+    return parseInt(id);
+  }).filter((id) => {
+    return !isNaN(id);
+  });
+};
+
 export const processQuery = (
     pool: mysql.Pool,
     query: string,
     params: (string | number | null | boolean)[]
-): Promise<{}[]> => {
+): Promise<{ [key: string]: any}[]> => {
   return new Promise((resolve, reject) => {
     pool.getConnection((err, con) => {
       if (err) {

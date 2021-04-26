@@ -8,9 +8,13 @@ import {
   byId,
   relatedFromIds,
   rebuild,
+  link,
+  like,
+  deleteQuestion,
+  update,
   create,
 } from "./controller";
-import {isAuthenticated} from "../auth/authenticated";
+import {isAuthenticated, setLocals} from "../auth/authenticated";
 import {isAuthorized} from "../auth/authorized";
 
 export function routesConfig(app: Application) {
@@ -18,6 +22,24 @@ export function routesConfig(app: Application) {
       isAuthenticated,
       isAuthorized({hasRole: ["admin", "manager"]}),
       all
+  );
+
+  app.get("/question/like/:id",
+      isAuthenticated,
+      isAuthorized({hasRole: ["admin", "manager", "user"]}),
+      like
+  );
+
+  app.get("/question/delete/:id",
+      isAuthenticated,
+      isAuthorized({hasRole: ["admin", "manager"]}),
+      deleteQuestion
+  );
+
+  app.post("/question/update/:id",
+      isAuthenticated,
+      isAuthorized({hasRole: ["admin", "manager"]}),
+      update
   );
 
   app.get("/question/:id",
@@ -39,6 +61,7 @@ export function routesConfig(app: Application) {
   );
 
   app.get("/public/questions",
+      setLocals,
       publicAll
   );
 
@@ -58,15 +81,22 @@ export function routesConfig(app: Application) {
       create
   );
 
+  app.post("/questions/link",
+      link
+  );
+
   app.get("/public/questions/:page",
+      setLocals,
       publicAll
   );
 
   app.get("/public/question/:id",
+      setLocals,
       publicById
   );
 
   app.get("/public/related/questions/:id",
+      setLocals,
       publicRelated
   );
 }

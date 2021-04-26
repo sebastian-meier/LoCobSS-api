@@ -1,0 +1,17 @@
+{
+  "entryPoints": [
+    "src/index.ts",
+    "src/utils.ts",
+    "src/auth/authenticated.ts",
+    "src/auth/authorized.ts",
+    "src/questions/routes-config.ts",
+    "src/questions/controller.ts",
+    "src/replies/routes-config.ts",
+    "src/replies/controller.ts",
+    "src/taxonomies/routes-config.ts",
+    "src/taxonomies/controller.ts",
+    "src/users/routes-config.ts",
+    "src/users/controller.ts"
+  ],
+  "out": "../docs"
+}

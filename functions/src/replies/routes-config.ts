@@ -2,50 +2,50 @@ import {Application} from "express";
 import {
   publicAll,
   byId,
-  updateTax,
-  createTax,
-  deleteTax,
-  revokeTax,
-  assignTax} from "./controller";
+  updateReply,
+  createReply,
+  revokeReply,
+  deleteReply,
+  assignReply} from "./controller";
 import {isAuthenticated} from "../auth/authenticated";
 import {isAuthorized} from "../auth/authorized";
 
 export function routesConfig(app: Application) {
-  app.post("/taxonomy/update",
+  app.post("/reply/update",
       isAuthenticated,
       isAuthorized({hasRole: ["admin", "manager"]}),
-      updateTax
+      updateReply
   );
 
-  app.get("/taxonomy/create",
+  app.get("/reply/create",
       isAuthenticated,
       isAuthorized({hasRole: ["admin", "manager"]}),
-      createTax
+      createReply
   );
 
-  app.get("/taxonomy/delete/:id",
+  app.get("/reply/delete/:id",
       isAuthenticated,
       isAuthorized({hasRole: ["admin", "manager"]}),
-      deleteTax
+      deleteReply
   );
 
-  app.get("/taxonomy/assign",
+  app.get("/reply/assign",
       isAuthenticated,
       isAuthorized({hasRole: ["admin", "manager"]}),
-      assignTax
+      assignReply
   );
 
-  app.get("/taxonomy/revoke",
+  app.get("/reply/revoke",
       isAuthenticated,
       isAuthorized({hasRole: ["admin", "manager"]}),
-      revokeTax
+      revokeReply
   );
 
-  app.get("/public/taxonomies",
+  app.get("/public/replies",
       publicAll
   );
 
-  app.get("/taxonomy/:id",
+  app.get("/reply/:id",
       isAuthenticated,
       isAuthorized({hasRole: ["admin", "manager"]}),
       byId
