@@ -8,7 +8,7 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "docs": "node .swagger-gen.js && openapi-generator-cli generate -i swagger.json -o ../apidocs -g html"
+    "docs": "node .swagger-gen.js"
   },
   "engines": {
     "node": "12"
