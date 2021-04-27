@@ -1,8 +1,22 @@
 # LoCobSS-api
 
+This is the main api for [locobss-plattform](https://www.github.com/sebastian-meier/locobss-plattform). For more details see the:
+
+- [API-Documentation](https://sebastian-meier.github.io/LoCobSS-api/apidocs)
+- [Code Documentation](https://sebastian-meier.github.io/LoCobSS-api/code)
+
+## Deploy
 ```
 firebase deploy
 ```
+
+## Local testing
+```bash
+cd functions
+npm install
+npm run serve
+```
+For local testing a .env file is also requried. See .env-sample for more info.
 
 ## API Docs
 Generate swagger.json by running
