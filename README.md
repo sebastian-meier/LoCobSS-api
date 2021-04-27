@@ -1,6 +1,6 @@
 # LoCobSS-api
 
-This is the main api for [locobss-plattform](https://www.github.com/sebastian-meier/locobss-plattform). For more details see the:
+This is the main api for [locobss-plattform](https://www.github.com/sebastian-meier/LoCobSS-plattform). For more details see the:
 
 - [API-Documentation](https://sebastian-meier.github.io/LoCobSS-api/apidocs)
 - [Code Documentation](https://sebastian-meier.github.io/LoCobSS-api/code)
