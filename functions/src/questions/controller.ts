@@ -36,18 +36,6 @@ export async function all(req: Request, res: Response) {
 }
 
 export async function userAll(req: Request, res: Response) {
-  // await admin
-  //     .auth()
-  //     .setCustomUserClaims("F5unopwbR9bfkHBc8TpSJPKqjqq1", {role: "admin"});
-
-  // await admin
-  //     .auth()
-  //     .setCustomUserClaims("prsxPrZ5N3X32V56vQf98Esw4iB3", {role: "user"});
-
-  // await admin
-  //     .auth()
-  //     .setCustomUserClaims("V08KZAYdcLQCavA5xvg58jiVcDc2", {role: "user"});
-
   try {
     if (!("uid" in res.locals)) {
       return res.status(404).send({

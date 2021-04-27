@@ -18,6 +18,17 @@ import {isAuthenticated, setLocals} from "../auth/authenticated";
 import {isAuthorized} from "../auth/authorized";
 
 export function routesConfig(app: Application) {
+/**
+ * @openapi
+ * /questions:
+ *   get:
+ *     description: Load all questions
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Returns a mysterious string.
+ */
   app.get("/questions",
       isAuthenticated,
       isAuthorized({hasRole: ["admin", "manager"]}),
