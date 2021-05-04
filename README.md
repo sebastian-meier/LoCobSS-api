@@ -9,6 +9,7 @@ This is the main api for [locobss-plattform](https://www.github.com/sebastian-me
 ```
 firebase deploy
 ```
+**NOTE:** The `/questions` endpoint serves ALL the questions, cloud functions are limited to a 10MB response. A server-side compression is implemented. But obviously this has its limitations.
 
 ## Local testing
 ```bash

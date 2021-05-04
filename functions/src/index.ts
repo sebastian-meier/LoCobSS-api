@@ -1,6 +1,7 @@
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import * as express from "express";
+import * as compression from "compression";
 import * as cors from "cors";
 import {json as bpJson} from "body-parser";
 import {routesConfig as userConfig} from "./users/routes-config";
@@ -13,6 +14,7 @@ admin.initializeApp();
 const app = express();
 app.use(cors()); // {origin: true}
 app.use(bpJson());
+app.use(compression());
 
 userConfig(app);
 questionConfig(app);
